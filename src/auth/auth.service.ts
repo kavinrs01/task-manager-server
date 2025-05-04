@@ -32,14 +32,21 @@ export class AuthService {
     return bcrypt.compare(raw, hashed);
   }
 
-  private generateToken(userId: string, type: 'access' | 'refresh'): string {
+  private generateToken(
+    user: { id: string; role: string; name: string; email: string },
+    type: 'access' | 'refresh',
+  ): string {
     const expiresIn =
       type === 'access'
         ? this.jwtConfig.accessTokenExpiresIn
         : this.jwtConfig.refreshTokenExpiresIn;
 
     return this.jwtService.sign(
-      { sub: { userId } },
+      {
+        sub: {
+          ...user,
+        },
+      },
       {
         secret: this.jwtConfig.jwtSecret,
         expiresIn,
@@ -63,8 +70,15 @@ export class AuthService {
       },
     });
 
-    const accessToken = this.generateToken(user.id, 'access');
-    const refreshToken = this.generateToken(user.id, 'refresh');
+    const tokenPayload = {
+      id: user.id,
+      role: user.role,
+      name: user.name,
+      email: user.email,
+    };
+
+    const accessToken = this.generateToken(tokenPayload, 'access');
+    const refreshToken = this.generateToken(tokenPayload, 'refresh');
     const expiresAt = DateTime.now().plus({ days: 7 }).toJSDate();
 
     await this.prisma.refreshToken.create({
@@ -92,9 +106,14 @@ export class AuthService {
 
     const isValid = await this.comparePasswords(password, user.password);
     if (!isValid) throw new UnauthorizedException('Invalid credentials');
-
-    const accessToken = this.generateToken(user.id, 'access');
-    const refreshToken = this.generateToken(user.id, 'refresh');
+    const tokenPayload = {
+      id: user.id,
+      role: user.role,
+      name: user.name,
+      email: user.email,
+    };
+    const accessToken = this.generateToken(tokenPayload, 'access');
+    const refreshToken = this.generateToken(tokenPayload, 'refresh');
     const expiresAt = DateTime.now().plus({ days: 7 }).toJSDate();
 
     await this.prisma.refreshToken.create({
@@ -129,9 +148,14 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-
-    const accessToken = this.generateToken(tokenRecord.userId, 'access');
-    const newRefreshToken = this.generateToken(tokenRecord.userId, 'refresh');
+    const tokenPayload = {
+      id: tokenRecord.user.id,
+      role: tokenRecord.user.role,
+      name: tokenRecord.user.name,
+      email: tokenRecord.user.email,
+    };
+    const accessToken = this.generateToken(tokenPayload, 'access');
+    const newRefreshToken = this.generateToken(tokenPayload, 'refresh');
     const newExpiresAt = DateTime.now().plus({ days: 7 }).toJSDate();
 
     await this.prisma.refreshToken.delete({
@@ -149,5 +173,40 @@ export class AuthService {
       accessToken,
       refreshToken: newRefreshToken,
     };
+  }
+
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
+  }
+
+  async logout(refreshToken: string) {
+    if (!refreshToken) {
+      const tokenRecord = await this.prisma.refreshToken.findUnique({
+        where: { token: refreshToken },
+      });
+
+      if (!tokenRecord) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      await this.prisma.refreshToken.delete({
+        where: { token: refreshToken },
+      });
+    }
+    return 'Logged out successfully';
   }
 }
