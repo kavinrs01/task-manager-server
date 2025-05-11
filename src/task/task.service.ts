@@ -15,6 +15,7 @@ export class TaskService {
 
   async getSortOrderForLatestTask() {
     const getLatestTask = await this.prisma.task.findFirst({
+      where: { isArchived: false },
       orderBy: {
         sortOrder: 'desc',
       },
@@ -119,7 +120,7 @@ export class TaskService {
       ...(cursor && {
         cursor: { id: cursor },
       }),
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { sortOrder: 'desc' },
     });
   }
 
@@ -196,7 +197,7 @@ export class TaskService {
       }
 
       const previousTask = await this.prisma.task.findFirst({
-        where: { sortOrder: { gt: overTask.sortOrder } },
+        where: { sortOrder: { gt: overTask.sortOrder }, isArchived: false },
         orderBy: { sortOrder: 'asc' },
       });
 
@@ -222,7 +223,10 @@ export class TaskService {
       }
 
       const nextTask = await this.prisma.task.findFirst({
-        where: { sortOrder: { lt: columnLastTask.sortOrder } },
+        where: {
+          sortOrder: { lt: columnLastTask.sortOrder },
+          isArchived: false,
+        },
         orderBy: { sortOrder: 'desc' },
       });
 

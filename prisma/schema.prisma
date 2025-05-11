@@ -64,6 +64,9 @@ model Task {
   createdByUser    User         @relation(fields: [createdByUserId], references: [id], name: "TaskCreatedByUser")
   createdByUserId  String       @db.ObjectId
 
-  @@index([assignedToUserId, status, isArchived], name: "userId_status_isArchived_index")
-  @@index([sortOrder], name: "sortOrder_index")
+  @@index([isArchived, sortOrder])
+  @@index([assignedToUserId, isArchived, sortOrder])
+  @@index([isArchived, status, sortOrder])
+  @@index([isArchived, priority, sortOrder])
+  @@index([isArchived, dueDate, sortOrder])
 }
