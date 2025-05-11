@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -20,6 +21,8 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { GetTaskListArgs } from './dto/task-filter.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskService } from './task.service';
+import { UpdateSortOrderDto } from './dto/update-sort-order.dto';
+import { Task } from '@prisma/client';
 
 @Controller('tasks')
 @UseGuards(JwtAuthGuard)
@@ -72,5 +75,10 @@ export class TaskController {
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() user: CurrentAuthUser) {
     return await this.taskService.remove(id, user);
+  }
+
+  @Patch('sort-order')
+  async updateSortOrder(@Body() dto: UpdateSortOrderDto): Promise<Task> {
+    return await this.taskService.updateSortOrder(dto);
   }
 }

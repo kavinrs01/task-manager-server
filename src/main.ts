@@ -10,7 +10,7 @@ async function bootstrap() {
     origin: (_, callback) => {
       callback(null, true);
     },
-    methods: 'GET, POST, PUT, DELETE, OPTIONS',
+    methods: 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
     allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
     credentials: true,
   });

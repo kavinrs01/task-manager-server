@@ -1,25 +1,25 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, Task } from '@prisma/client';
 import { CurrentAuthUser } from '../utils/types';
 import { GetTaskListArgs } from './dto/task-filter.dto';
+import { UpdateSortOrderDto } from './dto/update-sort-order.dto';
 
 @Injectable()
 export class TaskService {
   constructor(private prisma: PrismaService) {}
 
-  async getSortOrderForCreateTask() {
-    const getLatestTask = await this.prisma.task.findMany({
-      take: 1,
+  async getSortOrderForLatestTask() {
+    const getLatestTask = await this.prisma.task.findFirst({
       orderBy: {
         sortOrder: 'desc',
       },
     });
-    return getLatestTask[0].sortOrder + 1;
+    return (getLatestTask?.sortOrder || 0) + 1;
   }
 
   async create(dto: CreateTaskDto, currentUser: CurrentAuthUser) {
@@ -35,7 +35,7 @@ export class TaskService {
 
     const assignedTo = dto.assignedToUserId ?? currentUser.id;
 
-    const sortOrder = await this.getSortOrderForCreateTask();
+    const sortOrder = await this.getSortOrderForLatestTask();
 
     return await this.prisma.task.create({
       data: {
@@ -148,7 +148,6 @@ export class TaskService {
       where: { id },
       data: {
         ...dto,
-        dueDate: dto.dueDate,
       },
     });
   }
@@ -170,5 +169,82 @@ export class TaskService {
       where: { id },
       data: { isArchived: true },
     });
+  }
+  async updateSortOrder({
+    activeTaskId,
+    overTaskId,
+    columnLastTaskId,
+    newStatus,
+  }: UpdateSortOrderDto): Promise<Task> {
+    const activeTask = await this.prisma.task.findUnique({
+      where: { id: activeTaskId },
+    });
+
+    if (!activeTask) {
+      throw new HttpException('Active task not found', 404);
+    }
+
+    const calculateMidSortOrder = (a: number, b: number): number =>
+      Number(((a + b) / 2).toFixed(6));
+
+    if (overTaskId) {
+      const overTask = await this.prisma.task.findUnique({
+        where: { id: overTaskId },
+      });
+      if (!overTask) {
+        throw new HttpException('Over task not found', 404);
+      }
+
+      const previousTask = await this.prisma.task.findFirst({
+        where: { sortOrder: { gt: overTask.sortOrder } },
+        orderBy: { sortOrder: 'asc' },
+      });
+
+      const newSortOrder = previousTask
+        ? calculateMidSortOrder(previousTask.sortOrder, overTask.sortOrder)
+        : Number((overTask.sortOrder + 1).toFixed(6));
+
+      return await this.prisma.task.update({
+        where: { id: activeTaskId },
+        data: {
+          sortOrder: newSortOrder,
+          status: newStatus,
+        },
+      });
+    }
+
+    if (columnLastTaskId) {
+      const columnLastTask = await this.prisma.task.findUnique({
+        where: { id: columnLastTaskId },
+      });
+      if (!columnLastTask) {
+        throw new HttpException('Column last task not found', 404);
+      }
+
+      const nextTask = await this.prisma.task.findFirst({
+        where: { sortOrder: { lt: columnLastTask.sortOrder } },
+        orderBy: { sortOrder: 'desc' },
+      });
+
+      const newSortOrder = nextTask
+        ? calculateMidSortOrder(nextTask.sortOrder, columnLastTask.sortOrder)
+        : Number((columnLastTask.sortOrder - 1).toFixed(6));
+
+      return await this.prisma.task.update({
+        where: { id: activeTaskId },
+        data: { sortOrder: newSortOrder, status: newStatus },
+      });
+    }
+
+    if (!overTaskId && !columnLastTaskId) {
+      const sortOder = await this.getSortOrderForLatestTask();
+
+      return await this.prisma.task.update({
+        where: { id: activeTaskId },
+        data: { status: newStatus, sortOrder: sortOder },
+      });
+    }
+
+    throw new HttpException('Invalid sort order update context', 400);
   }
 }
