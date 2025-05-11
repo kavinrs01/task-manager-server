@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 import { DateTime } from 'luxon';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtConfig } from '../config/jwt.config';
+import { CurrentAuthUser } from '../utils/types';
+import { LoginDto, RegisterDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -54,7 +56,7 @@ export class AuthService {
     );
   }
 
-  async register(name: string, email: string, password: string) {
+  async register({ name, email, password }: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -70,7 +72,7 @@ export class AuthService {
       },
     });
 
-    const tokenPayload = {
+    const tokenPayload: CurrentAuthUser = {
       id: user.id,
       role: user.role,
       name: user.name,
@@ -100,7 +102,7 @@ export class AuthService {
     };
   }
 
-  async login(email: string, password: string) {
+  async login({ email, password }: LoginDto) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -208,5 +210,20 @@ export class AuthService {
       });
     }
     return 'Logged out successfully';
+  }
+
+  async getTeamMembers(currentUser: CurrentAuthUser) {
+    const teamMembers = await this.prisma.user.findMany({
+      where: {
+        id: { not: currentUser?.id },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    });
+    return teamMembers;
   }
 }

@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { Settings } from 'luxon';
 import { AppModule } from './app.module';
@@ -16,7 +16,13 @@ async function bootstrap() {
   });
   const reflector = app.get(Reflector);
   app.useGlobalGuards(new JwtAuthGuard(reflector));
-  app.useGlobalPipes();
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // strips unknown properties
+      forbidNonWhitelisted: true, // throws an error for unknown properties
+      transform: true, // transforms input to the correct type (e.g. string to number/date)
+    }),
+  );
   const port = process.env.PORT || 3000;
   await app.listen(port);
 
