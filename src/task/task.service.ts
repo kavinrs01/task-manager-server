@@ -25,13 +25,17 @@ export class TaskService {
 
   async create(dto: CreateTaskDto, currentUser: CurrentAuthUser) {
     if (
-      currentUser?.role === 'USER' &&
+      currentUser?.role === Role.USER &&
       dto.assignedToUserId &&
       dto.assignedToUserId !== currentUser?.id
     ) {
       throw new ForbiddenException(
         'Users can only assign tasks to themselves.',
       );
+    }
+
+    if (currentUser?.role === Role.USER && !dto.isPrivate) {
+      throw new ForbiddenException('Users can only create private tasks.');
     }
 
     const assignedTo = dto.assignedToUserId ?? currentUser.id;
@@ -57,7 +61,12 @@ export class TaskService {
 
     let where: Prisma.TaskWhereInput = { isArchived: false };
     if (role === Role.ADMIN) {
-      where = { isArchived: false };
+      where = {
+        isArchived: false,
+        NOT: {
+          AND: [{ isPrivate: true }, { assignedToUserId: { not: userId } }],
+        },
+      };
     } else {
       where = { assignedToUserId: userId, isArchived: false };
     }
@@ -133,16 +142,8 @@ export class TaskService {
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Task not found');
 
-    if (role !== 'ADMIN' && existing.assignedToUserId !== userId) {
+    if (role === Role.USER && existing.assignedToUserId !== userId) {
       throw new ForbiddenException('You can only update your own tasks.');
-    }
-
-    if (
-      role === 'USER' &&
-      dto.assignedToUserId &&
-      dto.assignedToUserId !== userId
-    ) {
-      throw new ForbiddenException('You cannot assign tasks to others.');
     }
 
     return await this.prisma.task.update({
@@ -157,12 +158,14 @@ export class TaskService {
     const { id: userId, role } = currentUser;
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Task not found');
-
     if (
-      role !== 'ADMIN' &&
-      existing.createdByUserId !== userId &&
-      existing.assignedToUserId !== userId
+      role === Role.ADMIN &&
+      existing?.isPrivate &&
+      existing?.assignedToUserId !== userId
     ) {
+      throw new ForbiddenException('Not authorized others private tasks');
+    }
+    if (role === Role.USER && existing.assignedToUserId !== userId) {
       throw new ForbiddenException('You can only delete tasks you created.');
     }
 
@@ -171,18 +174,31 @@ export class TaskService {
       data: { isArchived: true },
     });
   }
-  async updateSortOrder({
-    activeTaskId,
-    overTaskId,
-    columnLastTaskId,
-    newStatus,
-  }: UpdateSortOrderDto): Promise<Task> {
+  async updateSortOrder(
+    {
+      activeTaskId,
+      overTaskId,
+      columnLastTaskId,
+      newStatus,
+    }: UpdateSortOrderDto,
+    { id: userId, role }: CurrentAuthUser,
+  ): Promise<Task> {
     const activeTask = await this.prisma.task.findUnique({
       where: { id: activeTaskId },
     });
 
     if (!activeTask) {
       throw new HttpException('Active task not found', 404);
+    }
+    if (
+      role === Role.ADMIN &&
+      activeTask?.isPrivate &&
+      activeTask?.assignedToUserId !== userId
+    ) {
+      throw new ForbiddenException('Not authorized others private tasks');
+    }
+    if (role === Role.USER && activeTask.assignedToUserId !== userId) {
+      throw new ForbiddenException('You can only delete tasks you created.');
     }
 
     const calculateMidSortOrder = (a: number, b: number): number =>

@@ -63,6 +63,7 @@ model Task {
   assignedToUserId String       @db.ObjectId
   createdByUser    User         @relation(fields: [createdByUserId], references: [id], name: "TaskCreatedByUser")
   createdByUserId  String       @db.ObjectId
+  isPrivate        Boolean      @default(false)
 
   @@index([isArchived, sortOrder])
   @@index([assignedToUserId, isArchived, sortOrder])

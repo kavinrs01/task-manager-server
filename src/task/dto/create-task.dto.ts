@@ -1,5 +1,6 @@
 import { TaskPriority, TaskStatus } from '@prisma/client';
 import {
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNumber,
@@ -32,4 +33,7 @@ export class CreateTaskDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @IsBoolean()
+  isPrivate: boolean;
 }

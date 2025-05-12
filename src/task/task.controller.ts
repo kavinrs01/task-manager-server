@@ -78,7 +78,10 @@ export class TaskController {
   }
 
   @Patch('sort-order')
-  async updateSortOrder(@Body() dto: UpdateSortOrderDto): Promise<Task> {
-    return await this.taskService.updateSortOrder(dto);
+  async updateSortOrder(
+    @Body() dto: UpdateSortOrderDto,
+    @CurrentUser() user: CurrentAuthUser,
+  ): Promise<Task> {
+    return await this.taskService.updateSortOrder(dto, user);
   }
 }
