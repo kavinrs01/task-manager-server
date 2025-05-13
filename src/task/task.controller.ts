@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Task } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,10 +20,9 @@ import { parseNestedQueryParams } from '../utils/transformer';
 import { CurrentAuthUser } from '../utils/types';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { GetTaskListArgs } from './dto/task-filter.dto';
+import { UpdateSortOrderDto } from './dto/update-sort-order.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskService } from './task.service';
-import { UpdateSortOrderDto } from './dto/update-sort-order.dto';
-import { Task } from '@prisma/client';
 
 @Controller('tasks')
 @UseGuards(JwtAuthGuard)
@@ -61,6 +61,13 @@ export class TaskController {
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return await this.taskService.findOne(id);
+  }
+  @Get('getSubscribedTask/:id')
+  async getSubscribedTask(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentAuthUser,
+  ) {
+    return await this.taskService.getSubscribedTask(id, user);
   }
 
   @Put(':id')
