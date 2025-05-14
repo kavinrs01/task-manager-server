@@ -5,13 +5,20 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma, Role, Task } from '@prisma/client';
+import { DateTime } from 'luxon';
+import { FirebaseDatabaseService } from '../firebase/firebase-db.service';
+import { FirebaseCollection } from '../firebase/firebase-interface';
 import { CurrentAuthUser } from '../utils/types';
 import { GetTaskListArgs } from './dto/task-filter.dto';
 import { UpdateSortOrderDto } from './dto/update-sort-order.dto';
+import { FirebaseTask, TaskActionType } from './task.interface';
 
 @Injectable()
 export class TaskService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly firebaseDatabaseService: FirebaseDatabaseService,
+  ) {}
 
   async getSortOrderForLatestTask() {
     const getLatestTask = await this.prisma.task.findFirst({
@@ -42,7 +49,7 @@ export class TaskService {
 
     const sortOrder = await this.getSortOrderForLatestTask();
 
-    return await this.prisma.task.create({
+    const task = await this.prisma.task.create({
       data: {
         ...dto,
         dueDate: dto.dueDate,
@@ -51,6 +58,12 @@ export class TaskService {
         sortOrder: sortOrder,
       },
     });
+    await this.upsertTaskInFireStore({
+      actionType: TaskActionType.CREATED,
+      id: task.id,
+      updatedAt: DateTime.now().toISO(),
+    });
+    return task;
   }
 
   async findAll(
@@ -146,12 +159,19 @@ export class TaskService {
       throw new ForbiddenException('You can only update your own tasks.');
     }
 
-    return await this.prisma.task.update({
+    const task = await this.prisma.task.update({
       where: { id },
       data: {
         ...dto,
       },
     });
+
+    await this.upsertTaskInFireStore({
+      actionType: TaskActionType.UPDATED,
+      id: task.id,
+      updatedAt: DateTime.now().toISO(),
+    });
+    return task;
   }
 
   async remove(id: string, currentUser: CurrentAuthUser) {
@@ -169,10 +189,16 @@ export class TaskService {
       throw new ForbiddenException('You can only delete tasks you created.');
     }
 
-    return await this.prisma.task.update({
+    const task = await this.prisma.task.update({
       where: { id },
       data: { isArchived: true },
     });
+    await this.upsertTaskInFireStore({
+      actionType: TaskActionType.UPDATED,
+      id: task.id,
+      updatedAt: DateTime.now().toISO(),
+    });
+    return task;
   }
   async updateSortOrder(
     {
@@ -221,13 +247,20 @@ export class TaskService {
         ? calculateMidSortOrder(previousTask.sortOrder, overTask.sortOrder)
         : Number((overTask.sortOrder + 1).toFixed(6));
 
-      return await this.prisma.task.update({
+      const task = await this.prisma.task.update({
         where: { id: activeTaskId },
         data: {
           sortOrder: newSortOrder,
           status: newStatus,
         },
       });
+
+      await this.upsertTaskInFireStore({
+        actionType: TaskActionType.UPDATED,
+        id: task.id,
+        updatedAt: DateTime.now().toISO(),
+      });
+      return task;
     }
 
     if (columnLastTaskId) {
@@ -250,21 +283,57 @@ export class TaskService {
         ? calculateMidSortOrder(nextTask.sortOrder, columnLastTask.sortOrder)
         : Number((columnLastTask.sortOrder - 1).toFixed(6));
 
-      return await this.prisma.task.update({
+      const task = await this.prisma.task.update({
         where: { id: activeTaskId },
         data: { sortOrder: newSortOrder, status: newStatus },
       });
+      await this.upsertTaskInFireStore({
+        actionType: TaskActionType.UPDATED,
+        id: task.id,
+        updatedAt: DateTime.now().toISO(),
+      });
+      return task;
     }
 
     if (!overTaskId && !columnLastTaskId) {
       const sortOder = await this.getSortOrderForLatestTask();
 
-      return await this.prisma.task.update({
+      const task = await this.prisma.task.update({
         where: { id: activeTaskId },
         data: { status: newStatus, sortOrder: sortOder },
       });
+
+      await this.upsertTaskInFireStore({
+        actionType: TaskActionType.UPDATED,
+        id: task.id,
+        updatedAt: DateTime.now().toISO(),
+      });
+      return task;
     }
 
     throw new HttpException('Invalid sort order update context', 400);
+  }
+
+  async getSubscribedTask(id: string, currentUser: CurrentAuthUser) {
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (
+      (currentUser.role === Role.USER &&
+        task?.assignedToUserId !== currentUser.id) ||
+      (task?.isPrivate && task?.assignedToUserId !== currentUser.id)
+    ) {
+      throw new HttpException('Not authorized', 403);
+    } else {
+      return task;
+    }
+  }
+
+  private async upsertTaskInFireStore(data: FirebaseTask) {
+    await this.firebaseDatabaseService.createOrOverwriteDocument(
+      FirebaseCollection.TASKS,
+      data?.id,
+      {
+        ...data,
+      },
+    );
   }
 }
